@@ -1,5 +1,5 @@
 
-# ## Introduction
+# Introduction
 
 This educational repository is designed to demonstrate best engineering practices in a notebook-centric project using PySpark and Databricks. The focus is on building and managing DLT (Delta Live Tables) pipelines that process a publicly available New York taxi "data product."
 
