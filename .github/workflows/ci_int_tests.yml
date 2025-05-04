@@ -1,0 +1,122 @@
+name: CI integration tests pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, unlocked]
+    branches:
+      - main
+      - "release**"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch"
+        default: "main"
+        required: true
+jobs:
+  ci-all-in-one-int-test:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_JOBS_API_VERSION: 2.1
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Python virtual environment
+        run: |
+          python -m venv env
+          . env/bin/activate
+          echo "VIRTUAL ENV:" $VIRTUAL_ENV
+
+      - name: Install project
+        run: |
+          pip install build
+          pip install .[deploy]
+          
+      - name: Build wheel package
+        run: |
+          python -m build --wheel
+
+      - name: Reset DBFS
+        run: |
+          databricks fs rm -r dbfs:/FileStore/sample-databricks-python/conf/stage/${GITHUB_RUN_ID}
+          databricks fs rm -r dbfs:/FileStore/sample-databricks-python/dist/stage/${GITHUB_RUN_ID}
+
+          databricks fs mkdirs dbfs:/FileStore/sample-databricks-python/conf/stage/${GITHUB_RUN_ID}
+
+          databricks fs cp --overwrite conf/tasks/jinja-vars.yml \
+            dbfs:/FileStore/sample-databricks-python/conf/stage/${GITHUB_RUN_ID}/jinja-vars.yml
+
+          databricks fs mkdirs dbfs:/FileStore/sample-databricks-python/dist/stage/${GITHUB_RUN_ID}
+
+          databricks fs cp --overwrite dist/python-helper*.whl \
+            dbfs:/FileStore/sample-databricks-python/dist/stage/${GITHUB_RUN_ID}/
+
+      - name: Setup integration tests Databricks Repo
+        run: |
+          
+          REPO_NAME=${GITHUB_RUN_ID}
+          DB_OUT=$(databricks repos get --path /Repos/project-workspace-stage/"$REPO_NAME") || :
+
+          case $DB_OUT in
+            *"Error: RuntimeError: Can't find repo ID for"*)
+              echo "Repo $REPO_NAME is not found from previous runs, creating it"
+              databricks repos create \
+                --path /Repos/project-workspace-stage/${GITHUB_RUN_ID} \
+                --url https://github.com/msetkin/sample-databricks-python.git \
+                --provider=gitHub
+              ;;
+            *)
+              echo "Repo $REPO_NAME exists"
+              ;;
+          esac
+
+          if [ -z "${GITHUB_HEAD_REF}" ];
+          then
+            CURRENT_BRANCH="${GITHUB_REF_NAME}"
+          else
+            CURRENT_BRANCH="${GITHUB_HEAD_REF}"
+          fi
+
+          databricks repos update \
+            --path /Repos/project-workspace-stage/${GITHUB_RUN_ID} \
+            --branch ${CURRENT_BRANCH}
+
+      - name: Deploy and run all-in-one integration tests
+        run: |
+          dbx deploy ny-taxi-dlt-workflow-int-test-${GITHUB_RUN_ID} --environment=stage --jinja-variables-file=./conf/tasks/jinja-vars.yml
+          dbx deploy run-int-test-${GITHUB_RUN_ID} --environment=stage --jinja-variables-file=./conf/tasks/jinja-vars.yml
+
+          dbx launch run-int-test-${GITHUB_RUN_ID} --environment=stage --trace --include-output stdout
+
+  ci-clean-up-after-int-test:
+    needs: [ci-all-in-one-int-test]
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_JOBS_API_VERSION: 2.1
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Python virtual environment
+        run: |
+          python -m venv env
+          . env/bin/activate
+          echo "VIRTUAL ENV:" $VIRTUAL_ENV
+
+      - name: Install project
+        run: |
+          pip install .[deploy]
+
+      - name: Clean-up databricks workspace
+        run: |
+          databricks fs rm -r dbfs:/FileStore/sample-databricks-python/conf/stage/${GITHUB_RUN_ID}
+          databricks fs rm -r dbfs:/FileStore/sample-databricks-python/dist/stage/${GITHUB_RUN_ID}
+          databricks repos delete --path /Repos/project-workspace-stage/${GITHUB_RUN_ID}
+
+          dbx destroy --environment=stage --dracarys --confirm \
+            --jinja-variables-file=./conf/tasks/jinja-vars.yml \
+            --workflows="ny-taxi-dlt-workflow-int-test-${GITHUB_RUN_ID},run-int-test-${GITHUB_RUN_ID}"

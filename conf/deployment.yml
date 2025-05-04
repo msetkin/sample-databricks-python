@@ -1,0 +1,139 @@
+custom:
+  basic-cluster: &basic-cluster
+    new_cluster:
+      spark_version: "15.4.x-scala2.12"
+      node_type_id: "rd-fleet.xlarge"
+      num_workers: 0
+      spark_conf:
+        spark.master: "local[1]"
+        spark.databricks.cluster.profile: singleNode
+      aws_attributes:
+        zone_id: "auto"
+        availability: "SPOT_WITH_FALLBACK"
+        first_on_demand: 1
+
+  access-control-list: &access-control-list
+    access_control_list:
+      - group_name: {{ var['environment'].get(env.get('ENV')).get('ws_settings').get('group_name') }}
+        permission_level: "CAN_MANAGE"
+      - service_principal_name: service-principal://{{ var['environment'].get(env.get('ENV')).get('ws_settings').get('sevice_principal') }}
+        permission_level: "IS_OWNER"
+
+  basic-dlt-workflow-config: &basic-dlt-workflow-config
+    workflow_type: "pipeline"
+    photon: true
+    clusters:
+      - label: "default"
+        policy_id: {{ var['environment'].get(env.get('ENV')).get('ws_settings').get('policy_id') }}
+        aws_attributes:
+          zone_id: "auto"
+          availability: "SPOT_WITH_FALLBACK"
+          {% if env.get('ENV') == 'prod' %}
+          first_on_demand: 2
+          {% else %}
+          first_on_demand: 1
+          {% endif %}
+        {% if env.get('ENV') == 'prod' %}
+        node_type_id: "i3.xlarge"
+        num_workers: 1
+        {% else %}
+        node_type_id: "rd-fleet.xlarge"
+        num_workers: 0
+        spark_conf:
+          spark.master: "local[1]"
+          spark.databricks.cluster.profile: singleNode
+        {% endif %}
+    target: {{ var['environment'].get(env.get('ENV')).get('db_data_schema') }}
+
+  dlt-configuration-template: &dlt-configuration-template
+    {% if env.get('ENV') == 'prod' %}
+      conf_file: /dbfs/FileStore/sample-databricks-python/conf/{{ env.get('ENV') }}/jinja-vars.yml
+      github_run_id: ""
+      python_helper_path: /dbfs/FileStore/sample-databricks-python/dist/{{ env.get('ENV') }}/python_helper-0.0.1-py3-none-any.whl
+    {% else %}
+      conf_file: /dbfs/FileStore/sample-databricks-python/conf/{{ env.get('ENV') }}/{{ env.get("GITHUB_RUN_ID") }}/jinja-vars.yml
+      github_run_id: {{ env.get("GITHUB_RUN_ID") }}
+      python_helper_path: /dbfs/FileStore/sample-databricks-python/dist/{{ env.get('ENV') }}/{{ env.get("GITHUB_RUN_ID") }}/python_helper-0.0.1-py3-none-any.whl
+    {% endif %}
+      env: {{ env.get('ENV') }}
+
+  ny-taxi-dlt-workflow-template: &ny-taxi-dlt-workflow-template
+    <<: [*basic-dlt-workflow-config, *access-control-list]
+    development: {% if env.get('ENV') == 'prod' %} false {% else %} true {% endif %}
+    continuous: false
+    libraries:
+      - notebook:
+        {% if env.get('ENV') == 'prod' %}
+          path: /Repos/{{ var['environment'].get(env.get('ENV')).get('ws_settings').get('repo_name') }}/production/workflows/NY_Taxi_DLT
+        {% else %}
+          path: /Repos/{{ var['environment'].get(env.get('ENV')).get('ws_settings').get('repo_name') }}/{{ env.get("GITHUB_RUN_ID") }}/workflows/NY_Taxi_DLT
+        {% endif %}
+    configuration:
+      <<: *dlt-configuration-template
+
+  workflows-template: &workflows-template
+    workflows:
+      - name: ny-taxi-dlt-workflow
+        <<: *ny-taxi-dlt-workflow-template
+
+build:
+  no_build: true
+
+environments:
+  stage:
+    workflows:
+      - name: ny-taxi-dlt-workflow-{{ env.get("GITHUB_RUN_ID") }}
+        <<: *ny-taxi-dlt-workflow-template
+
+      - name: run-int-test-{{ env.get("GITHUB_RUN_ID") }}
+        <<: *access-control-list
+        job_clusters:
+          - job_cluster_key: int_test_cluster
+            <<: *basic-cluster
+        tasks:
+          - task_key: ny-taxi-prepare-test-data
+            <<: *access-control-list
+            job_cluster_key: int_test_cluster
+            notebook_task:
+              notebook_path: "/Repos/project-workspace-stage/{{ env.get("GITHUB_RUN_ID") }}/stages/integration/notebooks/ny_taxi/ny_taxi_00_generate_test_data"
+              base_parameters:
+                conf_file: /dbfs/FileStore/sample-databricks-python/conf/stage/{{ env.get("GITHUB_RUN_ID") }}/jinja-vars.yml
+                github_run_id: {{ env.get("GITHUB_RUN_ID") }}
+                env: {{ env.get('ENV') }}
+                python_helper_path: /dbfs/FileStore/sample-databricks-python/dist/{{ env.get('ENV') }}/{{ env.get("GITHUB_RUN_ID") }}/python_helper-0.0.1-py3-none-any.whl
+
+          - task_key: ny-taxi-load-test-data
+            depends_on:
+              - task_key: ny-taxi-prepare-test-data
+            pipeline_task:
+              pipeline_id: pipeline://ny-taxi-dlt-workflow-{{ env.get("GITHUB_RUN_ID") }}
+              full_refresh: true
+
+          - task_key: ny-taxi-int-tests
+            <<: *access-control-list
+            job_cluster_key: int_test_cluster
+            depends_on:
+              - task_key: ny-taxi-load-test-data
+            notebook_task:
+              notebook_path: "/Repos/project-workspace-stage/{{ env.get("GITHUB_RUN_ID") }}/stages/integration/notebooks/ny_taxi/ny_taxi_01_test"
+              base_parameters:
+                conf_file: /dbfs/FileStore/sample-databricks-python/conf/stage/{{ env.get("GITHUB_RUN_ID") }}/jinja-vars.yml
+                github_run_id: {{ env.get("GITHUB_RUN_ID") }}
+                env: {{ env.get('ENV') }}
+                python_helper_path: /dbfs/FileStore/sample-databricks-python/dist/{{ env.get('ENV') }}/{{ env.get("GITHUB_RUN_ID") }}/python_helper-0.0.1-py3-none-any.whl
+
+          - task_key: post-cleanup-int-test
+            <<: *access-control-list
+            job_cluster_key: int_test_cluster
+            depends_on:
+              - task_key: ny-taxi-int-tests
+            notebook_task:
+              notebook_path: "/Repos/project-workspace-stage/{{ env.get("GITHUB_RUN_ID") }}/stages/integration/notebooks/int_tests_cleanup"
+              base_parameters:
+                conf_file: /dbfs/FileStore/sample-databricks-python/conf/stage/{{ env.get("GITHUB_RUN_ID") }}/jinja-vars.yml
+                github_run_id: {{ env.get("GITHUB_RUN_ID") }}
+                env: {{ env.get('ENV') }}
+                python_helper_path: /dbfs/FileStore/sample-databricks-python/dist/{{ env.get('ENV') }}/{{ env.get("GITHUB_RUN_ID") }}/python_helper-0.0.1-py3-none-any.whl
+
+  prod:
+    <<: *workflows-template

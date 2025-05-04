@@ -1,0 +1,17 @@
+environment:
+  stage:
+    s3_bucket: databricks-bucket-test
+    db_data_schema: data_test
+    ws_settings:
+      policy_id: policy_test
+      group_name: group_test
+      sevice_principal: sp_test
+      repo_name: project-workspace-stage
+  prod:
+    s3_bucket: databricks-bucket-prod
+    db_data_schema: data_test
+    ws_settings:
+      policy_id: policy_prod
+      group_name: group_prod
+      sevice_principal: sp_prod
+      repo_name: project-workspace-prod
