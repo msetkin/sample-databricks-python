@@ -1,0 +1,23 @@
+{
+    "environments": {
+        "stage": {
+            "profile": "test-profile",
+            "storage_type": "mlflow",
+            "properties": {
+                "workspace_directory": "/project-workspace-stage/dbx",
+                "artifact_location": "dbfs:/FileStore/dbx/artifacts"
+            }
+        },
+        "prod": {
+            "profile": "prod-profile",
+            "storage_type": "mlflow",
+            "properties": {
+                "workspace_directory": "/prod-project-workspace/dbx",
+                "artifact_location": "dbfs:/FileStore/dbx/artifacts"
+            }
+        }
+    },
+    "inplace_jinja_support": true,
+    "failsafe_cluster_reuse_with_assets": true,
+    "context_based_upload_for_execute": false
+}
