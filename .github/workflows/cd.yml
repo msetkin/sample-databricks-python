@@ -1,0 +1,93 @@
+name: CD  pipeline
+
+on:
+  push:
+    tags:
+      - prod-v**
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git Tag to deploy"
+
+jobs:
+  cd-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || env.GITHUB_REF }}
+
+      - name: Extract the Tag name
+        run: |
+          CURRENT_TAG_CLEAN=$(echo $GITHUB_REF | sed "s/refs\/tags\///g")
+          echo "CURRENT_TAG=$CURRENT_TAG_CLEAN" >> $GITHUB_ENV
+
+      - name: Create Python virtual environment
+        run: |
+          python -m venv env
+          . env/bin/activate
+          echo "VIRTUAL ENV:" $VIRTUAL_ENV
+
+      - name: Install deploy tools
+        run: |
+          pip install .[deploy]
+
+      - name: Set environment variables for Prod
+        run: |
+          echo "setting up PROD env variables"
+          echo "ENV=prod" >> $GITHUB_ENV
+          echo "DATABRICKS_JOBS_API_VERSION=2.1" >> $GITHUB_ENV
+          echo "REPO=production" >> $GITHUB_ENV
+
+          echo "REPO_PATH=project-workspace-prod" >> $GITHUB_ENV
+          echo "DATABRICKS_HOST=${{ secrets.DATABRICKS_HOST_PROD }}" >> $GITHUB_ENV
+          echo "DATABRICKS_TOKEN=${{ secrets.DATABRICKS_TOKEN_PROD }}" >> $GITHUB_ENV
+
+      - name: Get an existing Databricks Repo
+        run: |
+          {
+            if output=$(databricks repos get --path /Repos/${{ env.REPO_PATH }}/${{ env.REPO }} 2>&1); then
+              output="repo found"
+            fi
+            echo 'DB_REPOS_OUT<<EOF'
+            echo "$output"
+            echo EOF
+          } &>> "$GITHUB_ENV"
+
+      - name: Create Repo if it does not exist
+        run: |
+          databricks repos create \
+                --path /Repos/${{ env.REPO_PATH }}/${{ env.REPO }} \
+                --url https://github.com/msetkin/sample-databricks-python.git \
+                --provider=gitHub
+
+      - name: Update the Repo to the Tag that triggered this CI
+        run: |
+          databricks repos update \
+            --path /Repos/${{ env.REPO_PATH }}/${{ env.REPO }} \
+            --tag ${{ env.CURRENT_TAG }}
+      
+      - name: Build wheel package
+        run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Upload configuration files to Databricks
+        run: |
+          databricks fs mkdirs dbfs:/FileStore/sample-databricks-python/conf/${{ env.ENV }}
+
+          databricks fs cp --overwrite \
+            conf/tasks/jinja-vars.yml \
+            dbfs:/FileStore/sample-databricks-python/conf/${{ env.ENV }}/jinja-vars.yml
+          
+          databricks fs mkdirs dbfs:/FileStore/sample-databricks-python/dist/${{ env.ENV }}
+
+          databricks fs cp --overwrite \
+            dist/python-helper*.whl \
+            dbfs:/FileStore/sample-databricks-python/dist/${{ env.ENV }}/
+
+
+      - name: Deploy the pipelines to PROD
+        run: |
+          dbx deploy ny-taxi-dlt-workflow --environment=${{ env.ENV }} --jinja-variables-file=./conf/tasks/jinja-vars.yml
