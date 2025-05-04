@@ -1,15 +1,15 @@
 
 # Introduction
 
-This educational repository is designed to demonstrate best engineering practices in a notebook-centric project using PySpark and Databricks. The focus is on building and managing DLT (Delta Live Tables) pipelines that process a publicly available New York taxi "data product."
+This educational repository is designed to demonstrate best engineering practices in a notebook-centric project using PySpark and Databricks. The focus is on building and managing DLT (Delta Live Tables) pipelines that process a publicly available New York taxi "data product".
 
 ## Project Structure
 
 The repository is organized as follows:
-**.dbx**: Contains the project deployment endpoint configuration used by the Databricks deployment framework [DBX](https://dbx.readthedocs.io/en/latest/).
-**.github/workflows**: Holds GitHub Actions workflow files, including `cd.yml` for continuous deployment and `ci.yml` for continuous integration.
-**conf**: Contains configuration files for the deployment of DLT pipelines used during the deployment of the pipelines by DBX (`deployment.yml`), and
-and the physical parametrisation values for the tasks to be able to operate in cross environment deployments (`tasks/jinja-vars.yml`).
+- **.dbx**: Contains the project deployment endpoint configuration used by the Databricks deployment framework [DBX](https://dbx.readthedocs.io/en/latest/).
+- **.github/workflows**: Holds GitHub Actions workflow files, namely the CI and CD pipelines.
+- **conf**: Contains configuration files for the deployment of DLT pipelines used during the deployment of the pipelines by DBX (`deployment.yml`), and
+and the physical parametrisation values for the tasks to be able to operate in cross-environmental deployments (`tasks/jinja-vars.yml`).
 
 **python_helper**: This directory includes Python packages and modules used in the project.
 
@@ -86,7 +86,7 @@ This project utilises the following best practices:
 
 ## Extrernal links
 
-The content of this repository represents the slightly reworked compilation of the ideas found in the following publicly available frameworks:
+The content of this repository represents the slightly reworked compilation of the ideas derived from the following publicly available repositories:
 - https://github.com/renardeinside/e2e-mlops-demo
 - https://github.com/renardeinside/dbx-dlt-devops/
 - https://github.com/renardeinside/databricks-repos-ci-demo
