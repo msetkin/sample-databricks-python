@@ -55,6 +55,8 @@ To get started with this project, you'll need:
 - A Databricks account
 - Basic knowledge of PySpark and Databricks
 
+To make it run:
+
 1. Clone this repository.
 2. Python 3.11 and Java>8 must be available for this project.
 3. Configure your Databricks development environment by running `dbx configure`, `databricks configure`, etc according to the official documentation.
