@@ -1,0 +1,65 @@
+name: CI linting and unit tests pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, unlocked]
+    branches:
+      - main
+      - "release**"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch"
+        default: "main"
+        required: true
+jobs:
+  ci-unit-tests:
+    runs-on: ubuntu-latest
+    permissions: read-all
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Python virtual environment
+        if: success() || failure()
+        run: |
+          python -m venv env
+          . env/bin/activate
+          echo "VIRTUAL ENV:" $VIRTUAL_ENV
+
+      - name: Install project
+        if: success() || failure()
+        run: |
+          pip install -e .[local_dev,linting,testing,security]
+
+      - name: Isort
+        if: success() || failure()
+        run: |
+          isort --check --diff python_helper tests workflows
+
+      - name: Black
+        if: success() || failure()
+        run: |
+          black --check --diff --config black.toml python_helper tests workflows
+
+      - name: Ruff
+        if: success() || failure()
+        run: |
+          ruff check--output-format pylint --output-file=.reports/ruff_report.txt python_helper tests
+
+      - name: Mypy
+        if: success() || failure()
+        run: |
+          mypy python_helper tests --explicit-package-bases --check-untyped-defs
+
+      - name: unit-tests
+        if: success() || failure()
+        run: |
+          PYTHONPATH=. pytest tests/unit --cov-report=xml:.reports/coverage.xml
+
+      - name: Bandit security scanning
+        if: success() || failure()
+        run: |
+          bandit -o .reports/bandit.xml -f xml -r python_helper
