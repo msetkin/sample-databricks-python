@@ -12,7 +12,7 @@
             "profile": "prod-profile",
             "storage_type": "mlflow",
             "properties": {
-                "workspace_directory": "/prod-project-workspace/dbx",
+                "workspace_directory": "/project-workspace-prod/dbx",
                 "artifact_location": "dbfs:/FileStore/dbx/artifacts"
             }
         }
