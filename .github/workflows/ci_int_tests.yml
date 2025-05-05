@@ -1,11 +1,11 @@
 name: CI integration tests pipeline
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, unlocked]
-    branches:
-      - main
-      - "release**"
+#  pull_request:
+#    types: [opened, synchronize, reopened, unlocked]
+#    branches:
+#      - main
+#      - "release**"
   workflow_dispatch:
     inputs:
       branch:
