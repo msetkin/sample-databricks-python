@@ -45,12 +45,12 @@ jobs:
       - name: Black
         if: success() || failure()
         run: |
-          black --check --diff --config black.toml python_helper tests workflows
+          black --check --diff python_helper tests workflows
 
       - name: Ruff
         if: success() || failure()
         run: |
-          ruff check--output-format pylint --output-file=.reports/ruff_report.txt python_helper tests
+          ruff check --output-format pylint python_helper tests
 
       - name: Mypy
         if: success() || failure()
